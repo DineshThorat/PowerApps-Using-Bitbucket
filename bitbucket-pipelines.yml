@@ -1,0 +1,68 @@
+image: mcr.microsoft.com/dotnet/sdk:8.0  
+
+pipelines:
+  default:
+    - step:
+        name: Install PowerApps CLI
+        script:
+          # Update package list and install necessary dependencies
+          - apt-get update && apt-get install -y wget apt-transport-https unzip curl
+
+          # Download and install Microsoft package repository
+          - wget https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+          - dpkg -i packages-microsoft-prod.deb
+          - apt-get update
+
+          # Install .NET SDK 8.0
+          - apt-get install -y dotnet-sdk-8.0
+          - dotnet --version  
+
+          # Install PowerApps CLI
+          - dotnet tool install --global Microsoft.PowerApps.CLI.Tool
+
+          # Ensure the PowerApps CLI is available in PATH
+          - export PATH="$HOME/.dotnet/tools:$PATH"
+
+          # Verify PowerApps CLI installation
+          - pac help
+
+          # Authenticate Power Platform CLI Using Service Pricipal
+          - pac auth create --applicationId "{{your-Client-id}}" --clientSecret "{{your-secret}}" --tenant "{{your-tenant}}" --environment "https://your-dev-env.crm8.dynamics.com/" --accept-cleartext-caching
+
+          # Verify authentication profile
+          - pac auth list
+
+          # List available solutions
+          - pac solution list
+
+          # Export Solution
+          - pac solution export --name "{{Solution-name}}" --path "./solution-name.zip" --async --max-async-wait-time "60" || (echo "Export command failed!" && exit 1)
+
+          # Verify if the ZIP file was created
+          - ls -l ./solution-name.zip || (echo "Solution export failed - ZIP file not found!" && exit 1)
+
+          # Unpack Solution
+          - pac solution unpack --zipfile "./solution-name.zip" --folder "./my-solution"
+
+          # Check unpacked files
+          - ls -l ./my-solution/
+          
+          # Git status check
+          - git status
+          - git add -A
+          - git status
+          - git diff --cached
+
+          # Commit and Push Changes
+          - git commit -m "Updated the solution" || echo "No changes to commit"
+          - git push origin ${BITBUCKET_BRANCH}
+
+          # Authenticate Power Platform CLI Using Service Pricipal
+          - pac auth create --applicationId "{{your-Client-id}}" --clientSecret "{{your-secret}}" --tenant "{{your-tenant}}" --environment "https://your-prod-env.crm8.dynamics.com/" --accept-cleartext-caching
+         
+          # Import Solution with the correct Dataverse environment URL
+          - pac solution import --path "./solution-name.zip" --async --force-overwrite --environment "https://your-prod-env.crm8.dynamics.com/" || (echo "Import command failed!" && exit 1)
+
+        artifacts:
+          - solution-name.zip
+          - my-solution/**
